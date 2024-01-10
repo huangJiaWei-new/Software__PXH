@@ -1,0 +1,2096 @@
+﻿#include "findrectcenterdlg.h"
+#include "ui_findrectcenterdlg.h"
+#include <windows.h>
+#include <opencv2/highgui/highgui_c.h>
+#include <QMessageBox>
+#include <QDebug>
+#include <QWheelEvent>
+#include <QJsonArray>
+#include <QtMath>
+#include "cmd_def.h"
+
+//初始化静态变量
+std::string FindRectCenterDlg::winName = "test";
+cv::Mat FindRectCenterDlg::m_scaleImg  = cv::Mat::zeros(3, 3, CV_8UC1);
+cv::Mat FindRectCenterDlg::m_sobelEdges = cv::Mat::zeros(3, 3, CV_8UC1);
+//cv::Mat FindRectCenterDlg::m_
+int FindRectCenterDlg::exclusionCount   = 0;
+int FindRectCenterDlg::count_SelectArea = 0;
+cv::Point FindRectCenterDlg::startPoint_Mouse = (-1, -1);
+cv::Point FindRectCenterDlg::endPoint_Mouse   = (-1, -1);
+RectangleInfo FindRectCenterDlg::m_rectInfo;
+LineInfo FindRectCenterDlg::m_lineInfo;
+AllInfoCollection FindRectCenterDlg::m_allInfoCollection;
+BindLineAndRect FindRectCenterDlg::m_BindLineAndRect;
+
+static int move_X  = 0;
+static int move_Y  = 0;
+
+
+
+FindRectCenterDlg::FindRectCenterDlg(QWidget *parent) :
+    QWidget(parent),
+    ui(new Ui::FindRectCenterDlg)
+{
+    ui->setupUi(this);
+    cv::Mat matSrcImg;
+    //isSwitch = false;
+    matSrcImg = cv::imread("D:/QT_Training/PXHForNick/Test.jpg");//1:多通道   0：单通道
+    receiveUpImg(matSrcImg, 0);
+}
+
+
+FindRectCenterDlg::~FindRectCenterDlg()
+{
+    delete ui;
+}
+
+
+
+/*--------------@brief：图像平移回调函数-------------*/
+/*--------------@note： -------------*/
+static void moveImg(int event, int x, int y, int flags, void *userdata)
+{
+    static int mouse_X = 0;
+    static int mouse_Y = 0;
+
+    if (event == cv::EVENT_MOUSEWHEEL)//鼠标滚轮
+    {
+
+
+    }
+    else if (event == cv::EVENT_RBUTTONDOWN) //鼠标右键down
+    {
+        //qDebug()<<("EVENT_RBUTTONDOWN\n");
+        mouse_X=x;
+        mouse_Y=y;
+        qDebug()<<"x:"<<x;
+        qDebug()<<"y:"<<y;
+
+    }
+    else if (event == cv::EVENT_RBUTTONDBLCLK) //鼠标右键clicked
+    {
+
+    }
+    else if (event == cv::EVENT_RBUTTONUP)     //鼠标右键up
+    {
+        static cv::Mat scaleImg;
+        static cv::Mat outputImg;
+
+        scaleImg = FindRectCenterDlg::getScaleImg();
+        cv::Size outputSize = scaleImg.size();
+        //定义变换矩阵，进行平移操作
+        cv::Mat transMatrix = (cv::Mat_<double>(2, 3) << 1, 0, x-mouse_X+move_X,
+                                                         0, 1, y-mouse_Y+move_Y);
+
+        cv::warpAffine(scaleImg, outputImg, transMatrix, outputSize); //根据平移矩阵进行仿射变换
+        cv::imshow("test",outputImg);
+        //FindRectCenterDlg::setScaleImg(outputImg);
+        move_X=x-mouse_X; //前一次位移
+        move_Y=y-mouse_Y;
+    }
+    else if(event == cv::EVENT_LBUTTONDOWN) //鼠标左键点击
+    {
+
+    }
+    else
+    {
+
+
+    }
+
+}
+
+
+/*--------------@brief：添加排除区域回调函数-------------*/
+/*--------------@note： -------------*/
+static void addExclusionArea(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static int exclusionCount = FindRectCenterDlg::getExclusionCount();
+    static cv::Point startPoint_rect;
+    static cv::Point endPoint_rect;
+    static cv::Point centerPoint_rect;
+    static RectangleInfo info_ExclusionRect;
+
+    //绘制筛选区域
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        if (exclusionCount == 0)
+        {
+            FindRectCenterDlg::setRectStartPoint(cv::Point(x, y));    //设置矩形起始点坐标
+            startPoint_rect = FindRectCenterDlg::getRectStartPoint(); //获取矩形起始点的坐标
+            //qDebug() << "x的坐标" <<startPoint_rect.x<< "Y的坐标" <<startPoint_rect.y;
+            exclusionCount++;
+            FindRectCenterDlg::setExclusionCount(exclusionCount); //更新'exclusionCount'的值
+        }
+        else if (exclusionCount == 1)
+        {         
+            FindRectCenterDlg::setRectEndPoint(cv::Point(x, y));  //设置矩形终点坐标
+            endPoint_rect = FindRectCenterDlg::getRectEndPoint(); //获取矩形终点坐标
+
+            //记录矩形的中心点坐标
+            //qDebug() << "x的坐标" <<startPoint_rect.x<< "Y的坐标" <<startPoint_rect.y;
+            //qDebug() << "x的坐标" <<endPoint_rect.x<< "Y的坐标" <<endPoint_rect.y;
+
+            centerPoint_rect = cv::Point( (startPoint_rect.x + endPoint_rect.x) / 2,
+                                          (startPoint_rect.y + endPoint_rect.y) / 2 );
+            FindRectCenterDlg::setRectCenterPoint(centerPoint_rect); //设置矩形的中心点坐标
+
+            //将排除区域矩形放到容器里
+            info_ExclusionRect = FindRectCenterDlg::getRectInfo(); //'m_rectInfo'是否有数据？
+            FindRectCenterDlg::setEclusionAreaVec(info_ExclusionRect);
+
+            //绘制矩形
+            cv::rectangle(image, startPoint_rect, endPoint_rect, cv::Scalar(0, 0, 255), 2);
+            cv::imshow("test", image);
+            QMessageBox::information(NULL, "PROMPT(提示)", "请一次性绘制完排除区域");
+            exclusionCount = 0;
+            FindRectCenterDlg::setExclusionCount(exclusionCount); //更新'exclusionCount'的值
+        }
+    }
+}
+
+
+/** --------------@brief：添加选择区域回调函数------------- **/
+/** --------------@note： ------------- **/
+static void addSelectArea(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static int selectAreaCount = FindRectCenterDlg::getSelectAreaCount();
+    static cv::Point startPoint_rect;
+    static cv::Point endPoint_rect;
+    static cv::Point centerPoint_rect;
+    static RectangleInfo info_SelectRect;
+
+    //绘制筛选区域
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        if (selectAreaCount == 0)
+        {
+            FindRectCenterDlg::setRectStartPoint(cv::Point(x, y));    //设置矩形起始点坐标
+            startPoint_rect = FindRectCenterDlg::getRectStartPoint(); //获取矩形起始点的坐标
+            //qDebug() << "x的坐标" <<startPoint_rect.x<< "Y的坐标" <<startPoint_rect.y;
+            selectAreaCount++;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+        else if (selectAreaCount == 1)
+        {
+            FindRectCenterDlg::setRectEndPoint(cv::Point(x, y)); //设置矩形终点坐标
+            endPoint_rect = FindRectCenterDlg::getRectEndPoint(); //获取矩形终点坐标
+
+            //记录矩形的中心点坐标
+            //qDebug() << "x的坐标" <<startPoint_rect.x<< "Y的坐标" <<startPoint_rect.y;
+            //qDebug() << "x的坐标" <<endPoint_rect.x<< "Y的坐标" <<endPoint_rect.y;
+
+            centerPoint_rect = cv::Point( (startPoint_rect.x + endPoint_rect.x) / 2,
+                                          (startPoint_rect.y + endPoint_rect.y) / 2 );
+            FindRectCenterDlg::setRectCenterPoint(centerPoint_rect); //设置矩形的中心点坐标
+
+            //将选择区域矩形放到容器里
+            info_SelectRect = FindRectCenterDlg::getRectInfo(); //'m_rectInfo'是否有数据？
+            FindRectCenterDlg::setSelectAreaVec(info_SelectRect);
+
+            //绘制矩形
+            cv::rectangle(image, startPoint_rect, endPoint_rect, cv::Scalar(0, 255, 0), 2);
+            cv::imshow("test", image);
+            QMessageBox::information(NULL, "PROMPT(提示)", "请绘制对应的边缘交线");
+            selectAreaCount = 0;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+    }
+}
+
+
+/** --------------@brief：绘制左边缘线回调函数------------- **/
+/** --------------@note： ------------- **/
+static void drawLeftLine(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static int selectAreaCount = FindRectCenterDlg::getSelectAreaCount();
+    //qDebug()<<"selectAreaCount" << selectAreaCount;
+    static cv::Point startPoint_line;
+    static cv::Point endPoint_line;
+    static cv::Mat lineImage;
+    static cv::Mat sobelImg;
+    static cv::Mat gray_SobelImg;
+
+    static cv::Point intersectionPoint_Line;
+    static cv::Point intersectionPoint;
+    static std::vector<RectangleInfo> vector_rect;
+    static LineInfo info_LeftLine;
+    static BindLineAndRect bindLineAndRect;
+
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        if (selectAreaCount == 0)
+        {
+            FindRectCenterDlg::setLineStartPoint(cv::Point(x, y));    //设置直线起始点坐标
+            startPoint_line = FindRectCenterDlg::getLineStartPoint(); //获取直线起始点的坐标
+            qDebug() << "x的坐标" <<startPoint_line.x<< "Y的坐标" <<startPoint_line.y;
+            selectAreaCount++;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+        else if (selectAreaCount == 1)
+        {
+            FindRectCenterDlg::setLineEndPoint(cv::Point(x, y));  //设置直线终点坐标
+            endPoint_line = FindRectCenterDlg::getLineEndPoint(); //获取直线终点坐标
+            qDebug() << "x的坐标" <<endPoint_line.x<< "Y的坐标" <<endPoint_line.y;
+
+            cv::line(image, startPoint_line, endPoint_line, cv::Scalar(255, 0, 0), 1);
+            cv::imshow("test", image);
+
+            lineImage = cv::Mat::zeros(image.size(), CV_8UC1); //创建一张空白灰度图像
+            sobelImg  = FindRectCenterDlg::getsobelEdgesImg(); //获取'sobel'图像
+            vector_rect = FindRectCenterDlg::getSelectAreaVec(); //获取选择区域容器
+
+            //得到选择区域容器内最新矩形的宽和高
+            int dx = vector_rect.back().rectEndPoint.x - vector_rect.back().rectStartPoint.x;
+            int dy = vector_rect.back().rectEndPoint.y - vector_rect.back().rectStartPoint.y;
+
+            //定义一个矩形的位置与尺寸
+            cv::Rect box(vector_rect.back().rectStartPoint.x,
+                         vector_rect.back().rectStartPoint.y, dx, dy);
+
+            cv::line(lineImage, startPoint_line, endPoint_line, cv::Scalar(255, 255, 255), 1);
+            cv::cvtColor(sobelImg, gray_SobelImg, cv::COLOR_BGR2GRAY);
+
+            //寻找直线与图像边缘的交点
+            intersectionPoint_Line = FindRectCenterDlg::findIntersections(gray_SobelImg, lineImage, box);
+            //设置直线的交点坐标
+            FindRectCenterDlg::setLineIntersectionPoint(intersectionPoint_Line);
+            //获取直线的交点
+            intersectionPoint = FindRectCenterDlg::getLineIntersectionPoint();
+
+            //保证绘制的直线与图像边缘有交点，然后存入左边缘线容器
+            info_LeftLine = FindRectCenterDlg::getLineInfo(); //'info_LeftLine'是否有数据？        
+            if (intersectionPoint.x != 0 && intersectionPoint.y != 0)
+            {
+                FindRectCenterDlg::setLeftLineVec(info_LeftLine);
+            }
+
+            //将绘制的直线与选取区域绑定在一起
+            FindRectCenterDlg::setBindLineAndRect(info_LeftLine, vector_rect.back());
+            bindLineAndRect = FindRectCenterDlg::getBindLineAndRect();
+            //将绘制的直线与选取区域绑定在一起的集合放入容器，左边
+            FindRectCenterDlg::set_leftLineAddleftSelectAreaVec(bindLineAndRect);
+
+            selectAreaCount = 0;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+
+        }
+    }
+}
+
+
+/** --------------@brief：绘制右边缘线回调函数------------- **/
+/** --------------@note： ------------- **/
+static void drawRightLine(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static int selectAreaCount = FindRectCenterDlg::getSelectAreaCount();
+    static cv::Point startPoint_line;
+    static cv::Point endPoint_line;
+    static cv::Mat lineImage;
+    static cv::Mat sobelImg;
+    static cv::Mat gray_SobelImg;
+
+    static cv::Point intersectionPoint_Line;
+    static cv::Point intersectionPoint;
+    static std::vector<RectangleInfo> vector_rect;
+    static LineInfo info_RightLine;
+    static BindLineAndRect bindLineAndRect;
+
+
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        if (selectAreaCount == 0)
+        {
+            FindRectCenterDlg::setLineStartPoint(cv::Point(x, y));    //设置直线起始点坐标
+            startPoint_line = FindRectCenterDlg::getLineStartPoint(); //获取直线起始点的坐标
+            qDebug() << "x的坐标" <<startPoint_line.x<< "Y的坐标" <<startPoint_line.y;
+            selectAreaCount++;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+        else if (selectAreaCount == 1)
+        {
+            FindRectCenterDlg::setLineEndPoint(cv::Point(x, y));  //设置直线终点坐标
+            endPoint_line = FindRectCenterDlg::getLineEndPoint(); //获取直线终点坐标
+            qDebug() << "x的坐标" <<endPoint_line.x<< "Y的坐标" <<endPoint_line.y;
+
+            cv::line(image, startPoint_line, endPoint_line, cv::Scalar(255, 0, 0), 1);
+            cv::imshow("test", image);
+
+            lineImage = cv::Mat::zeros(image.size(), CV_8UC1); //创建一张空白灰度图像
+            sobelImg  = FindRectCenterDlg::getsobelEdgesImg(); //获取'sobel'图像
+            vector_rect = FindRectCenterDlg::getSelectAreaVec(); //获取选择区域容器
+
+            //得到选择区域容器内最新矩形的宽和高
+            int dx = vector_rect.back().rectEndPoint.x - vector_rect.back().rectStartPoint.x;
+            int dy = vector_rect.back().rectEndPoint.y - vector_rect.back().rectStartPoint.y;
+
+            //定义一个矩形的位置与尺寸
+            cv::Rect box(vector_rect.back().rectStartPoint.x,
+                         vector_rect.back().rectStartPoint.y, dx, dy);
+
+            cv::line(lineImage, startPoint_line, endPoint_line, cv::Scalar(255, 255, 255), 1);
+            cv::cvtColor(sobelImg, gray_SobelImg, cv::COLOR_BGR2GRAY);
+
+            //寻找直线与边缘的交点
+            intersectionPoint_Line = FindRectCenterDlg::findIntersections(gray_SobelImg, lineImage, box);
+            //设置直线的交点坐标
+            FindRectCenterDlg::setLineIntersectionPoint(intersectionPoint_Line);
+            //获取直线的交点
+            intersectionPoint = FindRectCenterDlg::getLineIntersectionPoint();
+
+            //保证绘制的直线与图像边缘有交点，然后存入右边缘线容器
+            info_RightLine = FindRectCenterDlg::getLineInfo(); //'info_LeftLine'是否有数据？        
+            if (intersectionPoint.x != 0 && intersectionPoint.y != 0)
+            {
+                FindRectCenterDlg::setRightLineVec(info_RightLine);
+            }
+
+            //将绘制的直线与选取区域绑定在一起
+            FindRectCenterDlg::setBindLineAndRect(info_RightLine, vector_rect.back());
+            bindLineAndRect = FindRectCenterDlg::getBindLineAndRect();
+            //将绘制的直线与选取区域绑定在一起的集合放入容器，右边
+            FindRectCenterDlg::set_rightLineAddrightSelectAreaVec(bindLineAndRect);
+
+            selectAreaCount = 0;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+    }
+
+}
+
+
+/** --------------@brief：绘制上边缘线回调函数------------- **/
+/** --------------@note： ------------- **/
+static void drawUpLine(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static int selectAreaCount = FindRectCenterDlg::getSelectAreaCount();
+    static cv::Point startPoint_line;
+    static cv::Point endPoint_line;
+    static cv::Mat lineImage;
+    static cv::Mat sobelImg;
+    static cv::Mat gray_SobelImg;
+
+    static cv::Point intersectionPoint_Line;
+    static cv::Point intersectionPoint;
+    static std::vector<RectangleInfo> vector_rect;
+    static LineInfo info_UpLine;
+    static BindLineAndRect bindLineAndRect;
+
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        if (selectAreaCount == 0)
+        {
+            FindRectCenterDlg::setLineStartPoint(cv::Point(x, y));    //设置直线起始点坐标
+            startPoint_line = FindRectCenterDlg::getLineStartPoint(); //获取直线起始点的坐标
+            qDebug() << "x的坐标" <<startPoint_line.x<< "Y的坐标" <<startPoint_line.y;
+            selectAreaCount++;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+        else if (selectAreaCount == 1)
+        {
+            FindRectCenterDlg::setLineEndPoint(cv::Point(x, y));  //设置直线终点坐标
+            endPoint_line = FindRectCenterDlg::getLineEndPoint(); //获取直线终点坐标
+            qDebug() << "x的坐标" <<endPoint_line.x<< "Y的坐标" <<endPoint_line.y;
+
+            cv::line(image, startPoint_line, endPoint_line, cv::Scalar(255, 0, 0), 1);
+            cv::imshow("test", image);
+
+            lineImage = cv::Mat::zeros(image.size(), CV_8UC1); //创建一张空白灰度图像
+            sobelImg  = FindRectCenterDlg::getsobelEdgesImg(); //获取'sobel'图像
+            vector_rect = FindRectCenterDlg::getSelectAreaVec(); //获取选择区域容器
+
+            //得到选择区域容器内最新矩形的宽和高
+            int dx = vector_rect.back().rectEndPoint.x - vector_rect.back().rectStartPoint.x;
+            int dy = vector_rect.back().rectEndPoint.y - vector_rect.back().rectStartPoint.y;
+
+            //定义一个矩形的位置与尺寸
+            cv::Rect box(vector_rect.back().rectStartPoint.x,
+                         vector_rect.back().rectStartPoint.y, dx, dy);
+
+            cv::line(lineImage, startPoint_line, endPoint_line, cv::Scalar(255, 255, 255), 1);
+            cv::cvtColor(sobelImg, gray_SobelImg, cv::COLOR_BGR2GRAY);
+
+            //寻找直线与边缘的交点
+            intersectionPoint_Line = FindRectCenterDlg::findIntersections(gray_SobelImg, lineImage, box);
+            //设置直线的交点坐标
+            FindRectCenterDlg::setLineIntersectionPoint(intersectionPoint_Line);
+            //获取直线的交点
+            intersectionPoint = FindRectCenterDlg::getLineIntersectionPoint();
+
+            //保证绘制的直线与图像边缘有交点，然后存入上边缘线容器
+            info_UpLine = FindRectCenterDlg::getLineInfo(); //'info_LeftLine'是否有数据？
+            if (intersectionPoint.x != 0 && intersectionPoint.y != 0)
+            {
+                FindRectCenterDlg::setUpLineVec(info_UpLine);
+            }
+
+            //将绘制的直线与选取区域绑定在一起
+            FindRectCenterDlg::setBindLineAndRect(info_UpLine, vector_rect.back());
+            bindLineAndRect = FindRectCenterDlg::getBindLineAndRect();
+            //将绘制的直线与选取区域绑定在一起的集合放入容器，上边
+            FindRectCenterDlg::set_upLineAddupSelectAreaVec(bindLineAndRect);
+
+            selectAreaCount = 0;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+    }
+}
+
+
+/** --------------@brief：绘制下边缘线回调函数------------- **/
+/** --------------@note： ------------- **/
+static void drawDownLine(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static int selectAreaCount = FindRectCenterDlg::getSelectAreaCount();
+    static cv::Point startPoint_line;
+    static cv::Point endPoint_line;
+    static cv::Mat lineImage;
+    static cv::Mat sobelImg;
+    static cv::Mat gray_SobelImg;
+
+    static cv::Point intersectionPoint_Line;
+    static cv::Point intersectionPoint;
+    static std::vector<RectangleInfo> vector_rect;
+    static LineInfo info_DownLine;
+    static BindLineAndRect bindLineAndRect;
+
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        if (selectAreaCount == 0)
+        {
+            FindRectCenterDlg::setLineStartPoint(cv::Point(x, y));    //设置直线起始点坐标
+            startPoint_line = FindRectCenterDlg::getLineStartPoint(); //获取直线起始点的坐标
+            qDebug() << "x的坐标" <<startPoint_line.x<< "Y的坐标" <<startPoint_line.y;
+            selectAreaCount++;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+        else if (selectAreaCount == 1)
+        {
+            FindRectCenterDlg::setLineEndPoint(cv::Point(x, y));  //设置直线终点坐标
+            endPoint_line = FindRectCenterDlg::getLineEndPoint(); //获取直线终点坐标
+            qDebug() << "x的坐标" <<endPoint_line.x<< "Y的坐标" <<endPoint_line.y;
+
+            cv::line(image, startPoint_line, endPoint_line, cv::Scalar(255, 0, 0), 1);
+            cv::imshow("test", image);
+
+            lineImage = cv::Mat::zeros(image.size(), CV_8UC1); //创建一张空白灰度图像
+            sobelImg  = FindRectCenterDlg::getsobelEdgesImg(); //获取'sobel'图像
+            vector_rect = FindRectCenterDlg::getSelectAreaVec(); //获取选择区域容器
+
+            //得到选择区域容器内最新矩形的宽和高
+            int dx = vector_rect.back().rectEndPoint.x - vector_rect.back().rectStartPoint.x;
+            int dy = vector_rect.back().rectEndPoint.y - vector_rect.back().rectStartPoint.y;
+
+            //定义一个矩形的位置与尺寸
+            cv::Rect box(vector_rect.back().rectStartPoint.x,
+                         vector_rect.back().rectStartPoint.y, dx, dy);
+
+            cv::line(lineImage, startPoint_line, endPoint_line, cv::Scalar(255, 255, 255), 1);
+            cv::cvtColor(sobelImg, gray_SobelImg, cv::COLOR_BGR2GRAY);
+
+            //寻找直线与边缘的交点
+            intersectionPoint_Line = FindRectCenterDlg::findIntersections(gray_SobelImg, lineImage, box);
+            //设置直线的交点坐标
+            FindRectCenterDlg::setLineIntersectionPoint(intersectionPoint_Line);
+            //获取直线的交点
+            intersectionPoint = FindRectCenterDlg::getLineIntersectionPoint();
+
+            //保证绘制的直线与图像边缘有交点，然后存入下边缘线容器
+            info_DownLine = FindRectCenterDlg::getLineInfo(); //'info_LeftLine'是否有数据？
+            if (intersectionPoint.x != 0 && intersectionPoint.y != 0)
+            {
+                FindRectCenterDlg::setDownLineVec(info_DownLine);
+            }
+
+            //将绘制的直线与选取区域绑定在一起
+            FindRectCenterDlg::setBindLineAndRect(info_DownLine, vector_rect.back());
+            bindLineAndRect = FindRectCenterDlg::getBindLineAndRect();
+            //将绘制的直线与选取区域绑定在一起的集合放入容器，下边
+            FindRectCenterDlg::set_downLineAdddownSelectAreaVec(bindLineAndRect);
+
+            selectAreaCount = 0;
+            FindRectCenterDlg::setSelectAreaCount(selectAreaCount); //更新'count_SelectArea'的值
+        }
+    }
+
+
+}
+
+
+/** --------------@brief：撤销功能回调函数------------- **/
+/** --------------@note： ------------- **/
+static void unDo(int event,int x,int y,int flags,void *userdata)
+{
+    cv::Mat image = *((cv::Mat*)userdata);
+
+    static std::vector<LineInfo> vec_LeftLine; //左边缘线容器
+    static std::vector<RectangleInfo> vector_SelectArea; //选取区域容器
+    static std::vector<RectangleInfo> vector_EclusionArea; //排除区域容器
+
+    static int minDistanceIndex = -1; //容器编号
+    int minDistance = 5;
+
+    vec_LeftLine = FindRectCenterDlg::getLeftLineVec(); //获取左边缘线容器
+    vector_SelectArea = FindRectCenterDlg::getSelectAreaVec(); //获取选取区域容器
+    vector_EclusionArea = FindRectCenterDlg::getEclusionAreaVec(); //获取筛选区域容器
+
+    if (event == cv::EVENT_LBUTTONDOWN)
+    {
+        //遍历容器中的每条直线，在规定情况下'distance < minDistance'，找出要被删除的直线
+        for (int i = 0; i < vec_LeftLine.size(); ++i)
+        {
+            //计算鼠标位置与绘制直线起点的距离
+            double distance = abs(cv::norm(cv::Point(x, y) - vec_LeftLine[i].lineStartPoint));
+            //找出最小距离
+            if(distance < minDistance)
+            {
+                minDistance = distance;
+                minDistanceIndex = i; //记录当前最小距离的直线索引
+                //qDebug() << "i的值" << i;
+            }
+        }
+
+        //对图像进行重新绘制操作
+        if(minDistanceIndex != -1)
+        {
+            QMessageBox::StandardButton reply;
+            reply = QMessageBox::question(NULL, "Confirmation",
+                                          "是否要删除直线?",
+                                          QMessageBox::Yes|QMessageBox::No);
+            if(reply == QMessageBox::Yes)
+            {
+                vec_LeftLine.erase(vec_LeftLine.begin() + minDistanceIndex); //删除距离最短的直线
+
+                //更新数据源，左边缘线容器
+                AllInfoCollection &allInfoCollection = FindRectCenterDlg::getAllInfoCollection();
+                allInfoCollection.vec_LeftLine = vec_LeftLine;
+
+                //清空图像并重新绘制剩余的直线
+                image = cv::imread("D:/QT_Training/PXHForNick/binImg.jpg");
+
+                //重新绘制直线
+                for (const auto &line : vec_LeftLine)
+                {
+                    cv::line(image, line.lineStartPoint, line.lineEndPoint, cv::Scalar(255, 0, 0), 1);
+                }
+
+                //重新绘制选取区域
+                for(const auto &rect : vector_SelectArea)
+                {
+                    cv::rectangle(image, rect.rectStartPoint, rect.rectEndPoint, cv::Scalar(0, 255, 0), 2);
+                }
+
+                //重新绘制筛选区域
+                for(const auto &rect : vector_EclusionArea)
+                {
+                    cv::rectangle(image, rect.rectStartPoint, rect.rectEndPoint, cv::Scalar(0, 0, 255), 2);
+                }
+
+                cv::imshow("test", image);
+                minDistanceIndex = -1; //重置
+                //vec_LeftLine = FindRectCenterDlg::getLeftLineVec(); //获取左边缘线容器
+                //qDebug() <<"容器直线条数为:"<<vec_LeftLine.size();
+                //qDebug() << "已经擦除";
+            }
+            else
+            {
+                QMessageBox::information(NULL, "PROMPT(提示)", "请继续绘制直线");
+            }
+        }
+        else
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "请将鼠标放在正确位置");
+        }
+    }
+}
+
+
+/** --------------@brief：设置比例图像------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::setScaleImg(cv::Mat inputImg)
+{
+   m_scaleImg = inputImg;
+}
+
+
+/*--------------@brief：获取比例图像-------------*/
+/*--------------@note： 静态成员函数-------------*/
+cv::Mat FindRectCenterDlg::getScaleImg()
+{
+    return m_scaleImg;
+}
+
+
+/** --------------@brief：设置sobel图像------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setsobelEdgesImg(cv::Mat inputImg)
+{
+    m_sobelEdges = inputImg;
+}
+
+
+/** --------------@brief：获取sobel图像------------- **/
+/** --------------@note： 静态成员函数------------- **/
+cv::Mat FindRectCenterDlg::getsobelEdgesImg()
+{
+    return m_sobelEdges;
+}
+
+
+/*--------------@brief：获取'WinName'-------------*/
+/*--------------@note： 静态成员函数-------------*/
+std::string FindRectCenterDlg::getWinName()
+{
+    return winName;
+}
+
+
+/** --------------@brief：设置筛选区域个数变量的值------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setExclusionCount(int excluCount)
+{
+    exclusionCount = excluCount;
+}
+
+
+/** --------------@brief：设置鼠标起始点的坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setStartPoint_Mouse(cv::Point startPointMouse)
+{
+    startPoint_Mouse = startPointMouse;
+}
+
+
+/** --------------@brief：设置鼠标终点的坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setEndPonint_Mouse(cv::Point endPointMouse)
+{
+    endPoint_Mouse = endPointMouse;
+}
+
+
+/** --------------@brief：设置选择区域个数变量的值------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setSelectAreaCount(int count)
+{
+    count_SelectArea = count;
+}
+
+
+/*--------------@brief：获取筛选区域的数量-------------*/
+/*--------------@note： 静态成员函数-------------*/
+int FindRectCenterDlg::getExclusionCount()
+{
+    return exclusionCount;
+}
+
+
+/*--------------@brief：获取鼠标起始点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+cv::Point FindRectCenterDlg::getstartPoint_Mouse()
+{
+    return startPoint_Mouse;
+}
+
+
+/*--------------@brief：获取鼠标终点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+cv::Point FindRectCenterDlg::getendPonint_Mouse()
+{
+    return endPoint_Mouse;
+}
+
+
+/** --------------@brief：获取选择区域的数量------------- **/
+/** --------------@note： 静态成员函数------------- **/
+int FindRectCenterDlg::getSelectAreaCount()
+{
+    return count_SelectArea;
+}
+
+
+/*--------------@brief：设置矩形的起点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+void FindRectCenterDlg::setRectStartPoint(cv::Point startPoint)
+{
+    m_rectInfo.rectStartPoint = startPoint;
+}
+
+
+/*--------------@brief：设置矩形的终点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+void FindRectCenterDlg::setRectEndPoint(cv::Point endPoint)
+{
+    m_rectInfo.rectEndPoint = endPoint;
+}
+
+
+/*--------------@brief：设置矩形的中心点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+void FindRectCenterDlg::setRectCenterPoint(cv::Point centerPoint)
+{
+    m_rectInfo.rectCenterPoint = centerPoint;
+}
+
+
+/*--------------@brief：获取矩形的起点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+cv::Point FindRectCenterDlg::getRectStartPoint()
+{
+    return m_rectInfo.rectStartPoint;
+}
+
+
+/*--------------@brief：获取矩形的终点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+cv::Point FindRectCenterDlg::getRectEndPoint()
+{
+    return m_rectInfo.rectEndPoint;
+
+}
+
+
+/*--------------@brief：获取矩形的中心点坐标-------------*/
+/*--------------@note： 静态成员函数-------------*/
+cv::Point FindRectCenterDlg::getRectCenterPoint()
+{
+    return m_rectInfo.rectCenterPoint;
+}
+
+
+/** --------------@brief：获取矩形------------- **/
+/** --------------@note： 静态成员函数------------- **/
+RectangleInfo FindRectCenterDlg::getRectInfo()
+{
+    return m_rectInfo;
+}
+
+
+/** --------------@brief：设置直线的起点坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setLineStartPoint(cv::Point startPoint)
+{
+    m_lineInfo.lineStartPoint = startPoint;
+}
+
+
+/** --------------@brief：设置直线的终点坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setLineEndPoint(cv::Point endPoint)
+{
+    m_lineInfo.lineEndPoint = endPoint;
+}
+
+
+/** --------------@brief：设置直线的交点坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setLineIntersectionPoint(cv::Point intersectionPoint)
+{
+    m_lineInfo.intersectionPoint = intersectionPoint;
+}
+
+
+/** --------------@brief：获取直线的起点坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+cv::Point FindRectCenterDlg::getLineStartPoint()
+{
+    return m_lineInfo.lineStartPoint;
+}
+
+
+/** --------------@brief：获取直线的终点坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+cv::Point FindRectCenterDlg::getLineEndPoint()
+{
+    return m_lineInfo.lineEndPoint;
+}
+
+
+/** --------------@brief：获取直线的交点坐标------------- **/
+/** --------------@note： 静态成员函数------------- **/
+cv::Point FindRectCenterDlg::getLineIntersectionPoint()
+{
+    return m_lineInfo.intersectionPoint;
+}
+
+
+/** --------------@brief：获取直线------------- **/
+/** --------------@note： ------------- **/
+LineInfo FindRectCenterDlg::getLineInfo()
+{
+    return m_lineInfo;
+}
+
+
+/** --------------@brief：设置选择区域的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setSelectAreaVec(RectangleInfo selectArea)
+{
+    m_allInfoCollection.vec_SelectArea.push_back(selectArea);
+}
+
+
+/** --------------@brief：设置筛选区域的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setEclusionAreaVec(RectangleInfo eclusionArea)
+{
+    m_allInfoCollection.vec_EclusionArea.push_back(eclusionArea);
+}
+
+
+/** --------------@brief：获取选择区域的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<RectangleInfo> FindRectCenterDlg::getSelectAreaVec()
+{
+    return m_allInfoCollection.vec_SelectArea;
+}
+
+
+/** --------------@brief：获取筛选区域的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<RectangleInfo> FindRectCenterDlg::getEclusionAreaVec()
+{
+    return m_allInfoCollection.vec_EclusionArea;
+}
+
+
+/** --------------@brief：设置左边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setLeftLineVec(LineInfo leftLineVec)
+{
+    m_allInfoCollection.vec_LeftLine.push_back(leftLineVec);
+}
+
+
+/** --------------@brief：设置右边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setRightLineVec(LineInfo rightLineVec)
+{
+    m_allInfoCollection.vec_RightLine.push_back(rightLineVec);
+}
+
+
+/** --------------@brief：设置上边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setUpLineVec(LineInfo upLineVec)
+{
+    m_allInfoCollection.vec_UpLine.push_back(upLineVec);
+}
+
+
+/** --------------@brief：设置下边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setDownLineVec(LineInfo downLineVec)
+{
+    m_allInfoCollection.vec_DownLine.push_back(downLineVec);
+}
+
+
+/** --------------@brief：获取左边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<LineInfo> FindRectCenterDlg::getLeftLineVec()
+{
+    return m_allInfoCollection.vec_LeftLine;
+}
+
+
+/** --------------@brief：获取右边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<LineInfo> FindRectCenterDlg::getRightLineVec()
+{
+    return m_allInfoCollection.vec_RightLine;
+}
+
+
+/** --------------@brief：获取上边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<LineInfo> FindRectCenterDlg::getUpLineVec()
+{
+    return m_allInfoCollection.vec_UpLine;
+}
+
+
+/** --------------@brief：获取下边缘线的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<LineInfo> FindRectCenterDlg::getDownLineVec()
+{
+    return m_allInfoCollection.vec_DownLine;
+}
+
+
+/** --------------@brief：设置拟合直线集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setFitLineVec(FitLineInfo fitLineVec)
+{
+    m_allInfoCollection.vec_FitLine.push_back(fitLineVec);
+}
+
+
+/** --------------@brief：获取拟合直线集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<FitLineInfo> FindRectCenterDlg::getFitLineVec()
+{
+    return m_allInfoCollection.vec_FitLine;
+}
+
+
+/** --------------@brief：设置绘制的直线与选取区域绑定在一起的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::setBindLineAndRect(LineInfo lineInfo, RectangleInfo rectangleInfo)
+{
+    m_BindLineAndRect.lineInfo      = lineInfo;
+    m_BindLineAndRect.rectangleInfo = rectangleInfo;
+}
+
+
+/** --------------@brief：获取绘制的直线与选取区域绑定在一起的集合------------- **/
+/** --------------@note： 静态成员函数------------- **/
+BindLineAndRect FindRectCenterDlg::getBindLineAndRect()
+{
+    return m_BindLineAndRect;
+}
+
+
+/** --------------@brief：设置左边缘线与左选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::set_leftLineAddleftSelectAreaVec(BindLineAndRect leftLineAddleftSelectAreaVec)
+{
+    m_allInfoCollection.vec_leftLine_leftSelectArea.push_back(leftLineAddleftSelectAreaVec);
+}
+
+
+/** --------------@brief：设置右边缘线与右选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::set_rightLineAddrightSelectAreaVec(BindLineAndRect rightLineAddrightSelectAreaVec)
+{
+    m_allInfoCollection.vec_rightLine_rightSelectArea.push_back(rightLineAddrightSelectAreaVec);
+}
+
+
+/** --------------@brief：设置上边缘线与上选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::set_upLineAddupSelectAreaVec(BindLineAndRect upLineAddupSelectAreaVec)
+{
+    m_allInfoCollection.vec_upLine_upSelectArea.push_back(upLineAddupSelectAreaVec);
+}
+
+
+/** --------------@brief：设置下边缘线与下选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+void FindRectCenterDlg::set_downLineAdddownSelectAreaVec(BindLineAndRect downLineAdddownSelectAreaVec)
+{
+    m_allInfoCollection.vec_downLine_downSelectArea.push_back(downLineAdddownSelectAreaVec);
+}
+
+
+/** --------------@brief：获取左边缘线与左选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<BindLineAndRect> FindRectCenterDlg::get_leftLineAddleftSelectAreaVec()
+{
+    return m_allInfoCollection.vec_leftLine_leftSelectArea;
+
+}
+
+
+/** --------------@brief：获取右边缘线与右选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<BindLineAndRect> FindRectCenterDlg::get_rightLineAddrightSelectAreaVec()
+{
+    return m_allInfoCollection.vec_rightLine_rightSelectArea;
+
+}
+
+
+/** --------------@brief：获取上边缘线与上选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<BindLineAndRect> FindRectCenterDlg::get_upLineAddupSelectAreaVec()
+{
+    return m_allInfoCollection.vec_upLine_upSelectArea;
+}
+
+
+/** --------------@brief：获取下边缘线与下选择区域集合的容器------------- **/
+/** --------------@note： 静态成员函数------------- **/
+std::vector<BindLineAndRect> FindRectCenterDlg::get_downLineAdddownSelectAreaVec()
+{
+    return m_allInfoCollection.vec_downLine_downSelectArea;
+}
+
+
+/** --------------@brief：获取'AllInfoCollection'信息------------- **/
+/** --------------@note： ------------- **/
+AllInfoCollection &FindRectCenterDlg::getAllInfoCollection()
+{
+    return m_allInfoCollection;
+}
+
+
+///** --------------@brief：设置所有绘制的直线与选取区域绑定在一起的容器------------- **/
+///** --------------@note： 静态成员函数------------- **/
+//void FindRectCenterDlg::setBindLineAndRectVec(BindLineAndRect bindLineAndRect)
+//{
+//    m_allInfoCollection.vec_BindLineAndRect.push_back(bindLineAndRect);
+//}
+
+
+///** --------------@brief：获取所有绘制的直线与选取区域绑定在一起的容器------------- **/
+///** --------------@note： 静态成员函数------------- **/
+//std::vector<BindLineAndRect> FindRectCenterDlg::getBindLineAndRectVec()
+//{
+//    return m_allInfoCollection.vec_BindLineAndRect;
+//}
+
+
+/** --------------@brief：寻找直线与图像边缘的交点------------- **/
+/** --------------@note： 静态成员函数------------- **/
+cv::Point FindRectCenterDlg::findIntersections(cv::Mat& grayImg, cv::Mat& zerosImg, cv::Rect& selectArea)
+{
+    cv::Mat mask = cv::Mat::zeros(grayImg.size(), CV_8UC1);
+    mask(selectArea).setTo(255); //将选择区域设置为白色
+
+    static std::vector<cv::Point> intersectionPoints; //存储非零像素点坐标
+    static std::vector<cv::Point> intersections; //
+
+    cv::findNonZero(grayImg & zerosImg & mask, intersectionPoints); //将非零像素点坐标存储在'intersectionPoints'
+
+    if (intersectionPoints.size() == 0)
+    {
+        return {0, 0};
+    }
+    else
+    {
+        for (const auto& intersectionPoint : intersectionPoints)
+        {
+            intersections.push_back({(int)(intersectionPoint.x), (int)(intersectionPoint.y)});
+        }
+    }
+
+    cv::Point average = {0, 0};
+    int count = 0;
+    int count2 = 0;
+
+    static std::vector<RectangleInfo> vector_eclusionArea;
+    vector_eclusionArea = FindRectCenterDlg::getEclusionAreaVec(); //获取筛选区域集合
+
+    for (int i = 0; i < (int)intersections.size(); i++)
+    {
+        if ((int)vector_eclusionArea.size() != 0)
+        {
+            //判断交点是否在筛选区域内
+            for (int j = 0; j < (int)vector_eclusionArea.size(); j++)
+            {
+                //计算非零像素点坐标与筛选区域中心点坐标的差
+                int dx = abs(intersections[i].x - vector_eclusionArea[j].rectCenterPoint.y);
+                int dy = abs(intersections[i].y - vector_eclusionArea[j].rectCenterPoint.y);
+                //int dx = abs(intersections[i].x - Select_Rect.sxRect[j].RectCenter.x);
+                //int dy = abs(intersections[i].y - Select_Rect.sxRect[j].RectCenter.y);
+                //计算筛选区域的半宽和半高
+                int halfHeight_EclusionArea = abs(vector_eclusionArea[j].rectEndPoint.y - vector_eclusionArea[j].rectStartPoint.y) / 2;
+                int halfWidth_EclusionArea  = abs(vector_eclusionArea[j].rectEndPoint.x - vector_eclusionArea[j].rectStartPoint.x) / 2;
+
+                if (dx > halfWidth_EclusionArea | dy > halfHeight_EclusionArea)
+                {
+                    average.x += intersections[i].x;
+                    average.y += intersections[i].y;
+                    count++;
+                    count2++;
+                }
+            }
+        }
+        else
+        {
+            average.x += intersections[i].x;
+            average.y += intersections[i].y;
+            count++;
+        }
+    }
+
+    if (count2 != (int)vector_eclusionArea.size() * (int)intersections.size() && count2 == 0)
+    {
+        qDebug() << "没有交点" << endl;
+        intersectionPoints.clear();
+        intersections.clear();
+        return {0, 0};
+    }
+    else
+    {
+        average.x /= count;
+        average.y /= count;
+        qDebug() <<"交点坐标为："<<average.x <<","<< average.y;
+        intersectionPoints.clear();
+        intersections.clear();
+        return average;
+    }
+}
+
+
+/** --------------@brief：根据鼠标左键点击的位置寻找出距离最近的直线------------- **/
+/** --------------@note： 静态成员函数------------- **/
+//double FindRectCenterDlg::findNearestLineIndex(cv::Point inputPoint)
+//{
+//    static std::vector<LineInfo> vec_LeftLine;
+//    static double distance;
+
+//    vec_LeftLine = FindRectCenterDlg::getLeftLineVec();
+
+//    // 遍历容器并计算每条线段与鼠标左键点击位置的距离
+//    for (const auto& line : vec_LeftLine)
+//    {
+//        // 计算线段的中心点
+//        cv::Point lineCenter = (line.lineStartPoint + line.lineEndPoint) / 2;
+
+//        // 计算点击位置与线段中心点的欧几里得距离
+//        double dx = inputPoint.x - lineCenter.x;
+//        double dy = inputPoint.y - lineCenter.y;
+//        distance = std::sqrt(dx * dx + dy * dy);
+
+//        if(distance < 5)
+//        {
+
+
+
+//        }
+
+//        // 在这里可以使用 distance 进行相应的操作，比如筛选距离小于某个阈值的线段等等
+//        // 这里只是一个简单的距离计算示例
+//    }
+
+
+//}
+
+
+
+///*--------------@brief：获取矩形结构体的成员-------------*/
+///*--------------@note： -------------*/
+//RectangleInfo FindRectCenterDlg::getRectangleInfo()
+//{
+//    return m_rectInfo.rectStartPoint;
+//}
+
+
+/*--------------@brief：Sobel边缘检测-------------*/
+/*--------------@note： -------------*/
+bool FindRectCenterDlg::mySobel(cv::Mat &inputImg)
+{
+    //static cv::Mat sobelImg;
+    //static cv::Mat m_srcSobelEdges;
+    //sobelImg = FindRectCenterDlg::getsobelEdgesImg();
+
+    bool isTrueVal = true;
+    //使用'Sobel'算子检测图像中的边缘
+    cv::Mat grad_x, grad_y;
+    cv::Sobel(inputImg, grad_x, CV_16S, 1, 0);
+    cv::Sobel(inputImg, grad_y, CV_16S, 0, 1);
+    cv::convertScaleAbs(grad_x, grad_x);
+    cv::convertScaleAbs(grad_y, grad_y);
+    cv::addWeighted(grad_x, 0.5, grad_y, 0.5, 0, m_sobelEdges);
+
+    FindRectCenterDlg::setsobelEdgesImg(m_sobelEdges);
+
+    //cv::cvtColor(sobelImg, m_srcSobelEdges, cv::COLOR_BGR2GRAY);
+
+    //FindRectCenterDlg::setsobelEdgesImg(m_srcSobelEdges);
+
+    if(m_sobelEdges.data == 0)
+    {
+        isTrueVal = false;
+    }
+
+    return isTrueVal;
+}
+
+
+/*--------------@brief：图像二值化-------------*/
+/*--------------@note： -------------*/
+bool FindRectCenterDlg::binImageFunc()
+{
+    m_binImg.release();
+    bool isTrueVal = false;
+    /*double minthresholdnum = 0.0;
+    double maxthresholdnum = 1.0;
+    if(iThreshold !=0)
+    {
+        double tempthresholdnum;
+        tempthresholdnum = iThreshold;
+        if(minthresholdnum<tempthresholdnum && tempthresholdnum<maxthresholdnum)
+        {
+            iBinThreshNum = int(tempthresholdnum*255);
+        }
+        else if (1<=tempthresholdnum && tempthresholdnum<=255)
+        {
+            iBinThreshNum = int(tempthresholdnum);
+        }else
+        {
+            QMessageBox::critical(this,str_cn("错误信息"),str_cn("请输入正确的阈值或比例阈值！"));
+            isTrueVal = true;
+        }
+    }*/
+
+    qDebug()<<"iBinThreshNum:"<<iBinThreshNum<<endl;
+
+    if(isTrueVal)
+    {
+        return isTrueVal;
+    }
+    //二值化处理  THRESH_BINARY:当前点值大于阈值时，取Maxval,也就是第四个参数，下面再不说明，否则设置为0
+    cv::threshold(m_sobelEdges, m_binImg, iBinThreshNum, 255, cv::THRESH_BINARY);
+    cv::imwrite("D:/QT_Training/PXHForNick/binImg.jpg", m_binImg);
+
+    //二值图
+//    if(m_binImg.channels()==1)
+//    {
+//        cv::cvtColor(m_binImg, m_sobelBGREdges, cv::COLOR_GRAY2BGR);
+//    }
+//    else if(m_binImg.channels()==3)
+//    {
+//        m_sobelBGREdges=m_binImg.clone();
+//    }
+
+    //cv::imshow(winName,m_sobelBGREdges);
+//    cv::cvtColor(m_sobelBGREdges, m_srcSobelEdges, cv::COLOR_BGR2GRAY);
+//    m_UpImage=m_sobelBGREdges;
+
+    return isTrueVal;
+}
+
+
+/*--------------@brief：将opencv显示窗口嵌入到'widget'-------------*/
+/*--------------@note： -------------*/
+void FindRectCenterDlg::namedWindowToWidget(std::string namedWindowTitle, QWidget *widget)
+{
+    HWND hwnd = (HWND)cvGetWindowHandle(namedWindowTitle.c_str());
+    HWND hparent =::GetParent(hwnd);
+    ::SetParent(hwnd, (HWND)widget->winId());
+    ::ShowWindow(hparent, SW_HIDE);
+}
+
+
+/** --------------@brief：求得拟合直线的斜率和截距------------- **/
+/** --------------@note： 最小二乘法------------- **/
+FitLineInfo FindRectCenterDlg::fitLine(std::vector<cv::Point> &pointsFp)
+{
+    int n = pointsFp.size(); //点的个数
+    double x_sum = 0; // x坐标之和
+    double y_sum = 0; // y坐标之和
+    double xy_sum = 0; // x*y之和
+    double x2_sum = 0; // x^2之和
+    //遍历所有点，计算各项和
+    for (cv::Point p : pointsFp)
+    {
+        x_sum += p.x;
+        y_sum += p.y;
+        xy_sum += p.x * p.y;
+        x2_sum += p.x * p.x;
+    }
+    //根据公式计算斜率和截距
+    double k = (n * xy_sum - x_sum * y_sum) / (n * x2_sum - x_sum * x_sum);
+    double b = (y_sum - k * x_sum) / n;
+    qDebug() << "斜率:" << k << " 截距:" << b;
+    //返回拟合的直线
+    return FitLineInfo(k, b);
+}
+
+
+/** --------------@brief：获取两条直线的交点------------- **/
+/** --------------@note： ------------- **/
+cv::Point FindRectCenterDlg::getLineIntersection(FitLineInfo &fp1, FitLineInfo &fp2)
+{
+    //交点的坐标
+    cv::Point tempIntersection;
+    //根据公式求x
+    tempIntersection.x = (fp2.b - fp1.b) / (fp1.k - fp2.k);
+    //根据公式求y
+    tempIntersection.y = fp1.k * tempIntersection.x + fp1.b;
+    qDebug() << "The intersection is (" << tempIntersection.x << ", " << tempIntersection.y << ")" << endl;
+    return tempIntersection;
+}
+
+
+/** --------------@brief：求得器件的中心点------------- **/
+/** --------------@note： 四条拟合直线对角线的交点------------- **/
+cv::Point FindRectCenterDlg::findCenter(Line &fp1, Line &fp2)
+{
+    cv::Point p;
+    double a1 = fp1.p2.y - fp1.p1.y;
+    double b1 = fp1.p1.x - fp1.p2.x;
+    double c1 = a1 * fp1.p1.x + b1 * fp1.p1.y;
+
+    double a2 = fp2.p2.y - fp2.p1.y;
+    double b2 = fp2.p1.x - fp2.p2.x;
+    double c2 = a2 * fp2.p1.x + b2 * fp2.p1.y;
+
+    double determinant = a1 * b2 - a2 * b1;
+
+    if (determinant == 0)
+    {
+        qDebug() << "Lines are parallel" << endl;
+        return p;
+    }
+    else
+    {
+        p.x = (b2 * c1 - b1 * c2) / determinant;
+        p.y = (a1 * c2 - a2 * c1) / determinant;
+        return p;
+    }
+
+}
+
+
+/** --------------@brief：将坐标放入Json文件------------- **/
+/** --------------@note： ------------- **/
+QJsonObject FindRectCenterDlg::pointToJson(const cv::Point &point)
+{
+    QJsonObject jsonObject;
+    jsonObject["x"] = point.x;
+    jsonObject["y"] = point.y;
+    return jsonObject;
+}
+
+
+/** --------------@brief：将筛选区域放入Json文件------------- **/
+/** --------------@note： ------------- **/
+QJsonObject FindRectCenterDlg::eclusionAreaToJson(const RectangleInfo &item)
+{
+    QJsonObject jsonObject;
+    jsonObject["RectStart"]  = pointToJson(item.rectStartPoint);
+    jsonObject["RectEnd"]    = pointToJson(item.rectEndPoint);
+    jsonObject["RectCenter"] = pointToJson(item.rectCenterPoint);
+    return jsonObject;
+}
+
+
+/** --------------@brief：将绘制的直线和与之对应的选择区域存入Json文件------------- **/
+/** --------------@note： ------------- **/
+QJsonObject FindRectCenterDlg::bindLineAndRectToJson(const BindLineAndRect &item)
+{
+    QJsonObject jsonObject;
+    jsonObject["RectStart"]    = pointToJson(item.rectangleInfo.rectStartPoint);
+    jsonObject["RectEnd"]      = pointToJson(item.rectangleInfo.rectEndPoint);
+    jsonObject["RectCenter"]   = pointToJson(item.rectangleInfo.rectCenterPoint);
+    jsonObject["LineStart"]    = pointToJson(item.lineInfo.lineStartPoint);
+    jsonObject["LineEnd"]      = pointToJson(item.lineInfo.lineEndPoint);
+    jsonObject["intersection"] = pointToJson(item.lineInfo.intersectionPoint);
+    return jsonObject;
+}
+
+
+/** --------------@brief：生成Json文件------------- **/
+/** --------------@note： 存入的信息有筛选区域、绘制的直线和选择区域------------- **/
+void FindRectCenterDlg::saveToJson(const std::vector<RectangleInfo> &RectVector, const std::vector<std::vector<BindLineAndRect>> &RectLineVectors, const QString &fileName)
+{
+    QJsonObject jsonObject;
+    QJsonArray  jsonArray;
+
+    //存入筛选区域的信息
+    for (const RectangleInfo &item : RectVector)
+    {
+         jsonArray.append(eclusionAreaToJson(item));
+    }
+    jsonObject["RectVector"] = jsonArray;
+
+    //将绘制的直线和与之对应的选择区域存入Json
+    QJsonArray jsonArray_2;
+    for (const std::vector<BindLineAndRect> &myVector : RectLineVectors)
+    {
+        QJsonArray vectorArray;
+        for (const BindLineAndRect &item : myVector)
+        {
+            vectorArray.append(bindLineAndRectToJson(item));
+        }
+        jsonArray_2.append(vectorArray);
+    }
+
+    jsonObject["RectLineVectors"] = jsonArray_2;
+
+    QJsonDocument jsonDoc(jsonObject);
+    QFile file(fileName);
+
+    if (file.open(QIODevice::WriteOnly))
+    {
+        file.write(jsonDoc.toJson());
+    }
+
+}
+
+
+/** --------------@brief：解析并加载Json文件------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::loadJsonFile(const QString& filePath)
+{
+//    std::vector<std::vector<LineInfo>> linesData;
+
+//    QFile file(filePath);
+
+//    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+//    {
+//        qDebug() << "Failed to open file";
+//        return;
+//    }
+
+//    QByteArray jsonData = file.readAll();
+//    QJsonDocument doc(QJsonDocument::fromJson(jsonData));
+//    QJsonObject jsonObject = doc.object();
+
+//    if (jsonObject.contains("RectLineVectors"))
+//    {
+//        QJsonArray linesArray = jsonObject["RectLineVectors"].toArray();
+
+//        for (const auto& lineSet : linesArray)
+//        {
+//            QJsonArray lines = lineSet.toArray();
+//            std::vector<LineInfo> lineDataSet;
+//            for (const auto& line : lines)
+//            {
+//                QJsonObject lineObject = line.toObject();
+//                LineInfo data;
+//                // 解析直线数据
+//                data.lineStartPoint = cv::Point(lineObject["LineStart"].toObject()["x"].toInt(),
+//                                            lineObject["LineStart"].toObject()["y"].toInt());
+
+//                data.lineEndPoint = cv::Point(lineObject["LineEnd"].toObject()["x"].toInt(),
+//                                          lineObject["LineEnd"].toObject()["y"].toInt());
+//                // 解析其他数据
+//                // ...
+//                lineDataSet.push_back(data);
+//            }
+//            linesData.push_back(lineDataSet);
+//        }
+//    }
+
+}
+
+
+/** --------------@brief：------------- **/
+/** --------------@note： ------------- **/
+//double computeDistance(const std::vector<LineInfo>& line, int x, int y)
+//{
+//    // 计算点击位置 (x, y) 与直线的距离的逻辑
+//    // 这里只是一个简单的示例，实际上需要根据直线的具体情况计算距离
+//    // 这里使用欧几里得距离作为示例
+//    double distance = std::numeric_limits<double>::max();
+//    for (const auto& info : line) {
+//        double dx = x - (info.LineStart.x + info.LineEnd.x) / 2;
+//        double dy = y - (info.LineStart.y + info.LineEnd.y) / 2;
+//        double tempDist = std::sqrt(dx * dx + dy * dy);
+//        distance = std::min(distance, tempDist);
+//    }
+//    return distance;
+//}
+
+
+/** --------------@brief：寻找最近的直线索引函数------------- **/
+/** --------------@note： ------------- **/
+//size_t FindRectCenterDlg::findClosestLineIndex(int x, int y)
+//{
+
+//    // 找到最近的直线索引的逻辑
+//    // 这里只是一个简单的示例，实际上需要计算点击位置与每条直线的距离，并找到最近的一条
+//    std::vector<std::vector<LineInfo>> allLines;
+//    size_t closestIndex = 0;
+//    double minDistance = std::numeric_limits<double>::max();
+
+//     // 遍历所有直线
+//    for (size_t i = 0; i < allLines.size(); ++i)
+//    {
+//         // 计算当前直线与点击位置的距离，选择最近的直线
+//        double distance = computeDistance(allLines[i], x, y); // 自定义函数计算距离
+//        if (distance < minDistance)
+//        {
+//             minDistance = distance;
+//             closestIndex = i;
+//        }
+//    }
+
+//     return closestIndex;
+
+//}
+
+
+/*--------------@brief：-------------*/
+/*--------------@note： -------------*/
+//void FindRectCenterDlg::excludeMouseDrawing_2(cv::Mat &image)
+//{
+//    cv::imshow("test", image);
+//    //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+//    cv::setMouseCallback("test", excludeMouse_2, (void*)(&image));
+//}
+
+
+/*--------------@brief：接收'cameradialog'界面传过来的仰望相机图像-------------*/
+/*--------------@note： -------------*/
+void FindRectCenterDlg::receiveUpImg(cv::Mat UpImg, int index_Img)
+{
+    isUpImgorDownImg = index_Img; //0仰望，1俯视
+    m_UpImage = UpImg;
+    cv::namedWindow(winName);
+
+    ui->widgetPicture->setMinimumSize(m_UpImage.cols+60,m_UpImage.rows+60);
+   // ui->widgetColor->setMinimumSize(imgOrigin.cols+60,imgOrigin.rows+60);
+   // ui->widgetColor->hide();
+    ui->scrollArea->widget()->setMinimumSize(m_UpImage.cols+60,m_UpImage.rows+60);
+
+    cv::imshow(winName,m_UpImage);
+    namedWindowToWidget(winName,ui->widgetPicture);
+
+//    g_iZoom = 1;//初始缩放值为1，表示原图
+//    m_scaleImg = m_UpImage;
+
+//    cv::setMouseCallback(winName, moveImg, (void*)(&m_scaleImg)); //鼠标事件
+}
+
+
+/*--------------@brief：对图像进行预处理，sobel+二值化-------------*/
+/*--------------@note： -------------*/
+void FindRectCenterDlg::on_btnPreProcess_clicked()
+{
+    if(m_UpImage.data)
+    {
+        bool isSobelFlag = mySobel(m_UpImage);
+        if(isSobelFlag)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "Sobel边缘检测成功");
+        }
+        else
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "Sobel边缘检测失败");
+        }
+    }
+    else
+    {
+        QMessageBox::information(NULL, "PROMPT(提示)", "未获取原始图像信息");
+    }
+
+    if(m_sobelEdges.data)
+    {
+        bool isBinFlag = binImageFunc();
+        if(isBinFlag)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "二值化失败");
+        }
+        else
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "二值化成功");
+            cv::imshow("test", m_binImg);
+            m_scaleImg = m_binImg;
+            cv::setMouseCallback(winName, moveImg, (void*)(&m_scaleImg)); //鼠标事件
+        }
+    }
+    else
+    {
+        QMessageBox::information(NULL, "PROMPT(提示)", "未获取二值化图像信息");
+    }
+}
+
+
+/*--------------@brief：添加排除区域-------------*/
+/*--------------@note： -------------*/
+void FindRectCenterDlg::on_btnExcludeProcess_clicked()
+{
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        cv::imshow("test", m_binImg);
+        //鼠标回调函数，参数1表示窗口名称，参数2表示调用回调函数,参数3表示传给回调函数的用户数据
+        cv::setMouseCallback("test", addExclusionArea, (void*)(&m_binImg));
+        break;
+
+    case 1:
+
+        //imshow("test", image);
+        //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+        //cv::setMouseCallback("test", excludeMouse, (void*)(&image));
+
+        break;
+
+    default:
+        break;
+
+    }
+}
+
+
+/** --------------@brief：添加选择区域------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnSelectProcess_clicked()
+{
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        //鼠标回调函数，参数1表示窗口名称，参数2表示调用回调函数,参数3表示传给回调函数的用户数据
+        cv::setMouseCallback("test", addSelectArea, (void*)(&m_binImg));
+        break;
+
+    case 1:
+
+        //imshow("test", image);
+        //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+        //cv::setMouseCallback("test", excludeMouse, (void*)(&image));
+
+        break;
+
+    default:
+        break;
+
+    }
+}
+
+
+/** --------------@brief：绘制左边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnDrawLeftProcess_clicked()
+{
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        //cv::imshow("test", m_binImg);
+        //鼠标回调函数，参数1表示窗口名称，参数2表示调用回调函数,参数3表示传给回调函数的用户数据
+        cv::setMouseCallback("test", drawLeftLine, (void*)(&m_binImg));
+        break;
+
+    case 1:
+
+        //imshow("test", image);
+        //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+        //cv::setMouseCallback("test", excludeMouse, (void*)(&image));
+
+        break;
+
+    default:
+        break;
+    }
+
+}
+
+
+/** --------------@brief：绘制右边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnDrawRightProcess_clicked()
+{
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        //cv::imshow("test", m_binImg);
+        //鼠标回调函数，参数1表示窗口名称，参数2表示调用回调函数,参数3表示传给回调函数的用户数据
+        cv::setMouseCallback("test", drawRightLine, (void*)(&m_binImg));
+        break;
+
+    case 1:
+
+        //imshow("test", image);
+        //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+        //cv::setMouseCallback("test", excludeMouse, (void*)(&image));
+
+        break;
+
+    default:
+        break;
+    }
+
+}
+
+
+/** --------------@brief：绘制上边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnDrawUpProcess_clicked()
+{
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        //cv::imshow("test", m_binImg);
+        //鼠标回调函数，参数1表示窗口名称，参数2表示调用回调函数,参数3表示传给回调函数的用户数据
+        cv::setMouseCallback("test", drawUpLine, (void*)(&m_binImg));
+        break;
+
+    case 1:
+
+        //imshow("test", image);
+        //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+        //cv::setMouseCallback("test", excludeMouse, (void*)(&image));
+
+        break;
+
+    default:
+        break;
+    }
+
+}
+
+
+/** --------------@brief：绘制下边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnDrawBottomProcess_clicked()
+{
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        //cv::imshow("test", m_binImg);
+        //鼠标回调函数，参数1表示窗口名称，参数2表示调用回调函数,参数3表示传给回调函数的用户数据
+        cv::setMouseCallback("test", drawDownLine, (void*)(&m_binImg));
+        break;
+
+    case 1:
+
+        //imshow("test", image);
+        //鼠标回调函数，参数1表示名称，参数2表示调用on_Mouse,参数3表示传给回调函数的参数
+        //cv::setMouseCallback("test", excludeMouse, (void*)(&image));
+
+        break;
+
+    default:
+        break;
+    }
+}
+
+
+/** --------------@brief：拟合左边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnFitLeftProcess_clicked()
+{
+    static std::vector<LineInfo> vec_LeftLine;
+    vec_LeftLine = FindRectCenterDlg::getLeftLineVec(); //获取左边缘线容器
+
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        if (vec_LeftLine.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "图像没有拟合点");
+        }
+        else
+        {
+            std::vector<cv::Point> intersections;
+            //取出直线与图像边缘的交点
+            for (int i = 0; i < int(vec_LeftLine.size()); i++)
+            {
+                intersections.push_back(vec_LeftLine[i].intersectionPoint);
+            }
+
+            FitLineInfo m_fitLine = fitLine(intersections); //求得拟合直线的斜率以及截距
+            qDebug() << "左边缘线的斜率:"<<m_fitLine.k<<",截距:"<<m_fitLine.b;
+            //qDebug() << "左边缘线的截距："<<m_fitLine.b;
+            FindRectCenterDlg::setFitLineVec(m_fitLine); //将拟合直线的斜率以及截距放进容器
+        }
+        break;
+
+    case 1:
+
+        break;
+
+    default:
+        break;
+    }
+    /*if (m_imgIndex == 1)
+    {
+        if (Select_Rect.lineResult_LV.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "CameraSrcImg没有拟合点");
+        }
+        else
+        {
+            vector<cv::Point> intersections;
+            for (int i = 0; i < int(Select_Rect.lineResult_LV.size()); i++)
+            {
+                intersections.push_back(Select_Rect.lineResult_LV[i].intersection);
+            }
+            RectLine l = fit_line(intersections);
+            Rect_Line.push_back(l);
+        }
+    }
+    else
+    {
+        if (Select_Rect_2.lineResult_LV_2.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "CameraSrcImg_2没有拟合点");
+        }
+        else
+        {
+            vector<cv::Point> intersections_2;
+
+            for (int i = 0; i < int(Select_Rect_2.lineResult_LV_2.size()); i++)
+            {
+                intersections_2.push_back(Select_Rect_2.lineResult_LV_2[i].intersection);
+            }
+            RectLine l_2 = fit_line(intersections_2);
+            Rect_Line_2.push_back(l_2);
+        }
+    }*/
+}
+
+
+/** --------------@brief：拟合右边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnFitRightProcess_clicked()
+{
+    static std::vector<LineInfo> vec_RightLine;
+    vec_RightLine = FindRectCenterDlg::getRightLineVec(); //获取右边缘线容器
+
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        if (vec_RightLine.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "图像没有拟合点");
+        }
+        else
+        {
+            std::vector<cv::Point> intersections;
+            //取出直线与图像边缘的交点
+            for (int i = 0; i < int(vec_RightLine.size()); i++)
+            {
+                intersections.push_back(vec_RightLine[i].intersectionPoint);
+            }
+
+            FitLineInfo m_fitLine = fitLine(intersections); //拟合直线
+            qDebug() << "右边缘线的斜率:"<<m_fitLine.k<<",截距:"<<m_fitLine.b;
+            //qDebug() << "右边缘线的截距："<<m_fitLine.b;
+            FindRectCenterDlg::setFitLineVec(m_fitLine); //将拟合直线放进容器
+        }
+        break;
+
+    case 1:
+
+        break;
+
+    default:
+        break;
+    }
+}
+
+
+/** --------------@brief：拟合上边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnFitUpProcess_clicked()
+{
+    static std::vector<LineInfo> vec_UPLine;
+    vec_UPLine = FindRectCenterDlg::getUpLineVec(); //获取上边缘线容器
+
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        if (vec_UPLine.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "图像没有拟合点");
+        }
+        else
+        {
+            std::vector<cv::Point> intersections;
+            //取出直线与图像边缘的交点
+            for (int i = 0; i < int(vec_UPLine.size()); i++)
+            {
+                intersections.push_back(vec_UPLine[i].intersectionPoint);
+            }
+
+            FitLineInfo m_fitLine = fitLine(intersections); //拟合直线
+            qDebug() << "上边缘线的斜率:"<<m_fitLine.k<<",截距:"<<m_fitLine.b;
+            //qDebug() << "上边缘线的截距："<<m_fitLine.b;
+            FindRectCenterDlg::setFitLineVec(m_fitLine); //将拟合直线放进容器
+        }
+        break;
+
+    case 1:
+
+        break;
+
+    default:
+        break;
+    }
+
+}
+
+
+/** --------------@brief：拟合下边缘线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnFitBottomProcess_clicked()
+{
+    static std::vector<LineInfo> vec_DownLine;
+    vec_DownLine = FindRectCenterDlg::getDownLineVec(); //获取上边缘线容器
+
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        if (vec_DownLine.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "图像没有拟合点");
+        }
+        else
+        {
+            std::vector<cv::Point> intersections;
+            //取出直线与图像边缘的交点
+            for (int i = 0; i < int(vec_DownLine.size()); i++)
+            {
+                intersections.push_back(vec_DownLine[i].intersectionPoint);
+            }
+
+            FitLineInfo m_fitLine = fitLine(intersections); //拟合直线
+            qDebug() << "下边缘线的斜率:"<<m_fitLine.k<<",截距:"<<m_fitLine.b;
+            //qDebug() << "下边缘线的截距："<<m_fitLine.b;
+            FindRectCenterDlg::setFitLineVec(m_fitLine); //将拟合直线放进容器
+        }
+        break;
+
+    case 1:
+
+        break;
+
+    default:
+        break;
+    }
+}
+
+
+/** --------------@brief：寻找图像的中心点------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnCenterProcess_clicked()
+{
+    static std::vector<FitLineInfo> vec_FitLine;
+    vec_FitLine = FindRectCenterDlg::getFitLineVec();
+
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        if (vec_FitLine.size() == 0)
+        {
+            QMessageBox::information(NULL, "PROMPT(提示)", "图像没有交点");
+        }
+        else
+        {
+            //获取四条拟合直线的四个交点，0-左边缘 1-右边缘 2-上边缘 3-下边缘
+            cv::Point P1 = getLineIntersection(vec_FitLine[0], vec_FitLine[2]);
+            cv::Point P2 = getLineIntersection(vec_FitLine[0], vec_FitLine[3]);
+            cv::Point P3 = getLineIntersection(vec_FitLine[3], vec_FitLine[1]);
+            cv::Point P4 = getLineIntersection(vec_FitLine[1], vec_FitLine[2]);
+
+            //double angleInRadians = atan(vec_FitLine[3].k);  //计算弧度值
+            //double angleInDegrees = angleInRadians * 180 / M_PI; //转换为角度值
+            //qDebug() << "BGRSobelEdges angle in degrees: " << angleInDegrees;
+
+            cv::line(m_binImg, P1, P2, cv::Scalar(0, 255, 255), 2); //拟合的左边缘线
+            cv::line(m_binImg, P2, P3, cv::Scalar(0, 255, 255), 2); //拟合的下边缘线
+            cv::line(m_binImg, P3, P4, cv::Scalar(0, 255, 255), 2); //拟合的右边缘线
+            cv::line(m_binImg, P4, P1, cv::Scalar(0, 255, 255), 2); //拟合的上边缘线
+            //qDebug()<<"P1的坐标为:"<<P1.x<<P1.y;
+            //qDebug()<<"P2的坐标为:"<<P2.x<<P2.y;
+            //qDebug()<<"P3的坐标为:"<<P3.x<<P3.y;
+            //qDebug()<<"P4的坐标为:"<<P4.x<<P4.y;
+            Line l1 = {P1, P3};
+            Line l2 = {P2, P4};
+            cv::line(m_binImg, P1, P3, cv::Scalar(0, 255, 255), 2);
+            cv::line(m_binImg, P2, P4, cv::Scalar(0, 255, 255), 2);
+            cv::imshow("test", m_binImg);
+            //器件中心点
+            cv::Point P5 = findCenter(l1, l2); /** findCenter的形参有待改进 **/
+            qDebug() << "CameraSrcImg中心坐标：" << P5.x << "," << P5.y;
+        }
+        break;
+
+    case 1:
+
+        break;
+
+    default:
+        break;
+    }
+}
+
+
+/** --------------@brief：生成Json文件------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnJsonProcess_clicked()
+{
+    QString currentText = ui->comboBox->currentText();
+
+    static std::vector<RectangleInfo> vector_eclusionArea;
+    //static std::vector<std::vector<BindLineAndRect>> RectLineVectors;
+    static std::vector<BindLineAndRect> vec_leftLine_leftSelectArea;
+    static std::vector<BindLineAndRect> vec_rightLine_rightSelectArea;
+    static std::vector<BindLineAndRect> vec_upLine_upSelectArea;
+    static std::vector<BindLineAndRect> vec_downLine_downSelectArea;
+
+    static std::vector<std::vector<BindLineAndRect>> doubleVec_bindLineAndRect;
+    static QString finnal;
+
+    //0仰望图像，1俯视图像
+    switch(isUpImgorDownImg)
+    {
+    case 0:
+        finnal = currentText + "-" + "DataCameraImage.json";
+
+        vector_eclusionArea = FindRectCenterDlg::getEclusionAreaVec(); //获取筛选区域集合
+
+        //获取左、右、上、下绘制的直线与相对应的选取区域的容器
+        vec_leftLine_leftSelectArea   = FindRectCenterDlg::get_leftLineAddleftSelectAreaVec();
+        vec_rightLine_rightSelectArea = FindRectCenterDlg::get_rightLineAddrightSelectAreaVec();
+        vec_upLine_upSelectArea       = FindRectCenterDlg::get_upLineAddupSelectAreaVec();
+        vec_downLine_downSelectArea   = FindRectCenterDlg::get_downLineAdddownSelectAreaVec();
+
+        doubleVec_bindLineAndRect = {vec_leftLine_leftSelectArea,
+                                     vec_rightLine_rightSelectArea,
+                                     vec_upLine_upSelectArea,
+                                     vec_downLine_downSelectArea};
+
+        saveToJson(vector_eclusionArea, doubleVec_bindLineAndRect, finnal);
+        break;
+
+    case 1:
+
+        break;
+
+    default:
+        break;
+    }
+}
+
+
+/** --------------@brief：撤销直线------------- **/
+/** --------------@note： ------------- **/
+void FindRectCenterDlg::on_btnUndo_clicked()
+{
+    //cv::setMouseCallback(winName, unDo, (void*)(&m_scaleImg)); //鼠标事件
+    cv::setMouseCallback(winName, unDo, (void*)(&m_binImg)); //鼠标事件
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
