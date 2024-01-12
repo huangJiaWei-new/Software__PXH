@@ -1,0 +1,392 @@
+{
+    "RectLineVectors": [
+        [
+            {
+                "LineEnd": {
+                    "x": 745,
+                    "y": 764
+                },
+                "LineStart": {
+                    "x": 560,
+                    "y": 756
+                },
+                "RectCenter": {
+                    "x": 652,
+                    "y": 821
+                },
+                "RectEnd": {
+                    "x": 710,
+                    "y": 921
+                },
+                "RectStart": {
+                    "x": 595,
+                    "y": 722
+                },
+                "intersection": {
+                    "x": 678,
+                    "y": 761
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 740,
+                    "y": 827
+                },
+                "LineStart": {
+                    "x": 565,
+                    "y": 805
+                },
+                "RectCenter": {
+                    "x": 652,
+                    "y": 821
+                },
+                "RectEnd": {
+                    "x": 710,
+                    "y": 921
+                },
+                "RectStart": {
+                    "x": 595,
+                    "y": 722
+                },
+                "intersection": {
+                    "x": 674,
+                    "y": 818
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 746,
+                    "y": 878
+                },
+                "LineStart": {
+                    "x": 573,
+                    "y": 877
+                },
+                "RectCenter": {
+                    "x": 652,
+                    "y": 821
+                },
+                "RectEnd": {
+                    "x": 710,
+                    "y": 921
+                },
+                "RectStart": {
+                    "x": 595,
+                    "y": 722
+                },
+                "intersection": {
+                    "x": 678,
+                    "y": 877
+                }
+            }
+        ],
+        [
+            {
+                "LineEnd": {
+                    "x": 1617,
+                    "y": 744
+                },
+                "LineStart": {
+                    "x": 1488,
+                    "y": 738
+                },
+                "RectCenter": {
+                    "x": 1548,
+                    "y": 814
+                },
+                "RectEnd": {
+                    "x": 1589,
+                    "y": 940
+                },
+                "RectStart": {
+                    "x": 1507,
+                    "y": 689
+                },
+                "intersection": {
+                    "x": 1529,
+                    "y": 739
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1607,
+                    "y": 790
+                },
+                "LineStart": {
+                    "x": 1486,
+                    "y": 782
+                },
+                "RectCenter": {
+                    "x": 1548,
+                    "y": 814
+                },
+                "RectEnd": {
+                    "x": 1589,
+                    "y": 940
+                },
+                "RectStart": {
+                    "x": 1507,
+                    "y": 689
+                },
+                "intersection": {
+                    "x": 1529,
+                    "y": 784
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1619,
+                    "y": 845
+                },
+                "LineStart": {
+                    "x": 1490,
+                    "y": 836
+                },
+                "RectCenter": {
+                    "x": 1548,
+                    "y": 814
+                },
+                "RectEnd": {
+                    "x": 1589,
+                    "y": 940
+                },
+                "RectStart": {
+                    "x": 1507,
+                    "y": 689
+                },
+                "intersection": {
+                    "x": 1529,
+                    "y": 838
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1616,
+                    "y": 896
+                },
+                "LineStart": {
+                    "x": 1488,
+                    "y": 892
+                },
+                "RectCenter": {
+                    "x": 1548,
+                    "y": 814
+                },
+                "RectEnd": {
+                    "x": 1589,
+                    "y": 940
+                },
+                "RectStart": {
+                    "x": 1507,
+                    "y": 689
+                },
+                "intersection": {
+                    "x": 1529,
+                    "y": 893
+                }
+            }
+        ],
+        [
+            {
+                "LineEnd": {
+                    "x": 951,
+                    "y": 498
+                },
+                "LineStart": {
+                    "x": 961,
+                    "y": 354
+                },
+                "RectCenter": {
+                    "x": 1051,
+                    "y": 426
+                },
+                "RectEnd": {
+                    "x": 1189,
+                    "y": 471
+                },
+                "RectStart": {
+                    "x": 913,
+                    "y": 381
+                },
+                "intersection": {
+                    "x": 954,
+                    "y": 442
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1034,
+                    "y": 496
+                },
+                "LineStart": {
+                    "x": 1038,
+                    "y": 354
+                },
+                "RectCenter": {
+                    "x": 1051,
+                    "y": 426
+                },
+                "RectEnd": {
+                    "x": 1189,
+                    "y": 471
+                },
+                "RectStart": {
+                    "x": 913,
+                    "y": 381
+                },
+                "intersection": {
+                    "x": 1035,
+                    "y": 442
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1126,
+                    "y": 501
+                },
+                "LineStart": {
+                    "x": 1122,
+                    "y": 366
+                },
+                "RectCenter": {
+                    "x": 1051,
+                    "y": 426
+                },
+                "RectEnd": {
+                    "x": 1189,
+                    "y": 471
+                },
+                "RectStart": {
+                    "x": 913,
+                    "y": 381
+                },
+                "intersection": {
+                    "x": 1124,
+                    "y": 443
+                }
+            }
+        ],
+        [
+            {
+                "LineEnd": {
+                    "x": 939,
+                    "y": 1379
+                },
+                "LineStart": {
+                    "x": 975,
+                    "y": 1261
+                },
+                "RectCenter": {
+                    "x": 1128,
+                    "y": 1318
+                },
+                "RectEnd": {
+                    "x": 1325,
+                    "y": 1355
+                },
+                "RectStart": {
+                    "x": 931,
+                    "y": 1281
+                },
+                "intersection": {
+                    "x": 961,
+                    "y": 1304
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1124,
+                    "y": 1385
+                },
+                "LineStart": {
+                    "x": 1152,
+                    "y": 1269
+                },
+                "RectCenter": {
+                    "x": 1128,
+                    "y": 1318
+                },
+                "RectEnd": {
+                    "x": 1325,
+                    "y": 1355
+                },
+                "RectStart": {
+                    "x": 931,
+                    "y": 1281
+                },
+                "intersection": {
+                    "x": 1143,
+                    "y": 1302
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1214,
+                    "y": 1373
+                },
+                "LineStart": {
+                    "x": 1238,
+                    "y": 1259
+                },
+                "RectCenter": {
+                    "x": 1128,
+                    "y": 1318
+                },
+                "RectEnd": {
+                    "x": 1325,
+                    "y": 1355
+                },
+                "RectStart": {
+                    "x": 931,
+                    "y": 1281
+                },
+                "intersection": {
+                    "x": 1229,
+                    "y": 1300
+                }
+            },
+            {
+                "LineEnd": {
+                    "x": 1294,
+                    "y": 1365
+                },
+                "LineStart": {
+                    "x": 1311,
+                    "y": 1259
+                },
+                "RectCenter": {
+                    "x": 1128,
+                    "y": 1318
+                },
+                "RectEnd": {
+                    "x": 1325,
+                    "y": 1355
+                },
+                "RectStart": {
+                    "x": 931,
+                    "y": 1281
+                },
+                "intersection": {
+                    "x": 1303,
+                    "y": 1305
+                }
+            }
+        ]
+    ],
+    "RectVector": [
+        {
+            "RectCenter": {
+                "x": 1032,
+                "y": 663
+            },
+            "RectEnd": {
+                "x": 1139,
+                "y": 755
+            },
+            "RectStart": {
+                "x": 926,
+                "y": 571
+            }
+        }
+    ]
+}
