@@ -1,0 +1,148 @@
+{
+    "AllLineVector": [
+        {
+            "LineEnd": {
+                "x": 748,
+                "y": 807
+            },
+            "LineIntersection": {
+                "x": 669,
+                "y": 787
+            },
+            "LineStart": {
+                "x": 567,
+                "y": 762
+            }
+        },
+        {
+            "LineEnd": {
+                "x": 1628,
+                "y": 781
+            },
+            "LineIntersection": {
+                "x": 1516,
+                "y": 778
+            },
+            "LineStart": {
+                "x": 1431,
+                "y": 777
+            }
+        },
+        {
+            "LineEnd": {
+                "x": 1135,
+                "y": 479
+            },
+            "LineIntersection": {
+                "x": 1130,
+                "y": 433
+            },
+            "LineStart": {
+                "x": 1124,
+                "y": 366
+            }
+        },
+        {
+            "LineEnd": {
+                "x": 1250,
+                "y": 1382
+            },
+            "LineIntersection": {
+                "x": 1241,
+                "y": 1309
+            },
+            "LineStart": {
+                "x": 1235,
+                "y": 1259
+            }
+        }
+    ],
+    "EclusionAreaVector": [
+        {
+            "EclRectCenter": {
+                "x": 1070,
+                "y": 567
+            },
+            "EclRectEnd": {
+                "x": 1134,
+                "y": 613
+            },
+            "EclRectStart": {
+                "x": 1007,
+                "y": 521
+            }
+        },
+        {
+            "EclRectCenter": {
+                "x": 1083,
+                "y": 721
+            },
+            "EclRectEnd": {
+                "x": 1155,
+                "y": 780
+            },
+            "EclRectStart": {
+                "x": 1012,
+                "y": 663
+            }
+        }
+    ],
+    "SelectAreaVector": [
+        {
+            "SelRectCenter": {
+                "x": 648,
+                "y": 805
+            },
+            "SelRectEnd": {
+                "x": 693,
+                "y": 924
+            },
+            "SelRectStart": {
+                "x": 603,
+                "y": 686
+            }
+        },
+        {
+            "SelRectCenter": {
+                "x": 1538,
+                "y": 790
+            },
+            "SelRectEnd": {
+                "x": 1596,
+                "y": 875
+            },
+            "SelRectStart": {
+                "x": 1480,
+                "y": 705
+            }
+        },
+        {
+            "SelRectCenter": {
+                "x": 1138,
+                "y": 419
+            },
+            "SelRectEnd": {
+                "x": 1229,
+                "y": 453
+            },
+            "SelRectStart": {
+                "x": 1047,
+                "y": 385
+            }
+        },
+        {
+            "SelRectCenter": {
+                "x": 1234,
+                "y": 1326
+            },
+            "SelRectEnd": {
+                "x": 1394,
+                "y": 1365
+            },
+            "SelRectStart": {
+                "x": 1075,
+                "y": 1287
+            }
+        }
+    ]
+}

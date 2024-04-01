@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>reImg/cam.jpg</file>
+        <file>reImg/kaiguanshezhi.png</file>
+        <file>reImg/line_edge.jpg</file>
+        <file>reImg/set.png</file>
+    </qresource>
+</RCC>
